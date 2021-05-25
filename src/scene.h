@@ -12,14 +12,14 @@
 //  north (+y) and south (-y)
 //  going up (+z) and going down (-z)
 // screen coordinates:
-//  v from left (0) to right (SCREEN_WIDTH-1)
-//  w from top (0) to bottom (SCREEN_HEIGHT-1)
+//  u from left (0) to right (SCREEN_WIDTH-1)
+//  v from top (0) to bottom (SCREEN_HEIGHT-1)
 
 typedef struct landscape
 {   // landscape is composed of 4 planes plus a skybox.
 
     // distances from the camera to each plane.
-    float plane_distances[NUM_SCENE_PLANES];
+    float plane_distance[NUM_SCENE_PLANES];
 
     // in this root scope, we have helper variables which can
     // be modified every frame.
@@ -53,23 +53,23 @@ typedef struct landscape
     {   // these are derived variables which should not be changed by other files.
 
         // each plane is defined by the height from the top of the screen for each v coordinate;
-        // these heights are indexed by position (v = 0 to SCREEN_WIDTH-1) and then plane index.
-        // the first plane (plane_w_start[:][0]) is closest to the player, and therefore has
-        // highest drawing priority.  it should be drawn if it its plane_w_start is
+        // these heights are indexed by position (u = 0 to SCREEN_WIDTH-1) and then plane index.
+        // the first plane (plane_v_start[:][0]) is closest to the player, and therefore has
+        // highest drawing priority.  it should be drawn if it its plane_v_start is
         // less-than-or-equal-to the current vga_line.  then try the next plane
-        // (plane_w_start[:][1]), and so on.
-        uint8_t plane_w_start[SCREEN_WIDTH][NUM_SCENE_PLANES];
+        // (plane_v_start[:][1]), and so on.
+        uint8_t plane_v_start[SCREEN_WIDTH][NUM_SCENE_PLANES];
 
         // the current color of each plane, at the current vga_line.
         uint16_t color[NUM_SCENE_PLANES];
 
         struct
         {   // what to draw when no plane intersects with the current screen position.
-            int16_t sun_v;
-            int16_t moon_v;
+            int16_t sun_u;
+            int16_t moon_u;
 
-            uint8_t sun_w;
-            uint8_t moon_w;
+            uint8_t sun_v;
+            uint8_t moon_v;
             uint16_t sky_color;
 
             uint16_t sun_color;
@@ -89,6 +89,10 @@ typedef struct scene
         // unit vector corresponding to direction the camera is looking.
         // the z-component, forward[2], should be zero.
         float forward[3];
+        // this right unit-vector for the camera:
+        float right[3];
+        // where the camera is
+        float screen_v;
     }   camera;
 
     landscape_t landscape;

@@ -1,6 +1,8 @@
 #ifndef GAME_H
 #define GAME_H
 #include "bitbox.h"
+
+#include <assert.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -17,6 +19,8 @@
 {   message(#x " was not true at " __FILE__ ":%d!\n", __LINE__); \
     bitbox_die(-1, 0); \
 }})
+
+#define STATIC_ASSERT(x) EMU_ONLY(static_assert(x))
 
 #define CLOSE(x, y) (fabs((x) - (y)) < 1e-3)
 
