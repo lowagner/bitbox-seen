@@ -21,9 +21,14 @@ void scene_update()
 static inline void scene_calculate_plane(int plane_index);
 
 void scene_line()
-{   if (vga_line < NUM_SCENE_PLANES)
+{   STATIC_ASSERT(MIN_V == NUM_SCENE_PLANES);
+    if (vga_line < MIN_V)
     {   if (vga_line / 2 == 0)
             memset(draw_buffer, 0, 2*SCREEN_WIDTH);
+        // TODO:
+        // may need to spread out these calculations more, these are pretty involved.
+        // maybe set MIN_V = 2 * NUM_SCENE_PLAYERS, calculate only if vga_line % 2, and
+        // pass in vga_line / 2 here:
         scene_calculate_plane(vga_line);
         return;
     }
