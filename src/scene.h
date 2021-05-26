@@ -60,9 +60,6 @@ typedef struct landscape
         // (plane_v_start[:][1]), and so on.
         uint8_t plane_v_start[SCREEN_WIDTH][NUM_SCENE_PLANES];
 
-        // the current color of each plane, at the current vga_line.
-        uint16_t color[NUM_SCENE_PLANES];
-
         struct
         {   // what to draw when no plane intersects with the current screen position.
             int16_t sun_u;
@@ -91,7 +88,7 @@ typedef struct scene
         float forward[3];
         // this right unit-vector for the camera:
         float right[3];
-        // where the camera is
+        // where the camera is in screen-height coordinates (0 to SCREEN_HEIGHT-1 probably):
         float screen_v;
     }   camera;
 

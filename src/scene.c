@@ -8,36 +8,90 @@ scene_t scene CCM_MEMORY;
 
 #define SCENE_ASPECT_RATIO 1.2f
 // minimum vga_line to start drawing on:
-#define MIN_V NUM_SCENE_PLANES
+#define MIN_V (2 * NUM_SCENE_PLANES /* calculating each plane */ + 2 /* blank lines at top*/)
+
+#define VECTOR_ASSIGN(vector, x, y, z) \
+    vector[0] = (x); \
+    vector[1] = (y); \
+    vector[2] = (z)
 
 void scene_restart()
-{
+{   int plane = -1;
+    scene.landscape.plane_distance[++plane] = 1.5f;
+    scene.landscape.color[plane] = RGB(100, 255, 100);
+    scene.landscape.plane_distance[++plane] = 5.0f;
+    scene.landscape.color[plane] = RGB(200, 255, 100);
+    scene.landscape.plane_distance[++plane] = 15.0f;
+    scene.landscape.color[plane] = RGB(100, 50, 50);
+    scene.landscape.plane_distance[++plane] = 100.0f;
+    scene.landscape.color[plane] = RGB(50, 10, 70);
+    ASSERT(plane == NUM_SCENE_PLANES - 1)
+
+    // set up camera correctly:
+    VECTOR_ASSIGN(scene.camera.position, 0, 0, 0);
+    VECTOR_ASSIGN(scene.camera.forward, 0, -1, 0);
+    VECTOR_ASSIGN(scene.camera.right, 1, 0, 0);
+    scene.camera.screen_v = SCREEN_HEIGHT * 0.5f;
 }
 
 void scene_update()
 {
 }
 
+static inline uint16_t scene_skybox_color(int i);
+static inline void scene_calculate_skybox();
 static inline void scene_calculate_plane(int plane_index);
 
 void scene_line()
-{   STATIC_ASSERT(MIN_V == NUM_SCENE_PLANES);
-    if (vga_line < MIN_V)
+{   if (vga_line < MIN_V)
     {   if (vga_line / 2 == 0)
-            memset(draw_buffer, 0, 2*SCREEN_WIDTH);
-        // TODO:
-        // may need to spread out these calculations more, these are pretty involved.
-        // maybe set MIN_V = 2 * NUM_SCENE_PLAYERS, calculate only if vga_line % 2, and
-        // pass in vga_line / 2 here:
-        scene_calculate_plane(vga_line);
+        {   memset(draw_buffer, 0, 2*SCREEN_WIDTH);
+            // TODO: calculate skybox on vga_line == 0
+            if (vga_line % 2 == 0)
+                scene_calculate_skybox();
+        }
+        else if (vga_line % 2 == 0)
+            scene_calculate_plane(vga_line/2 - 1);
         return;
     }
+    uint16_t *dst = draw_buffer - 1;
+    const uint8_t vga8 = vga_line;
+    for (int i = 0; i < SCREEN_WIDTH; ++i)
+    {   STATIC_ASSERT(NUM_SCENE_PLANES == 4);
+        uint8_t *plane_v_start = scene.landscape.to_draw.plane_v_start[i];
+        if (plane_v_start[0] > vga8)
+        {   if (plane_v_start[1] > vga8)
+            {   if (plane_v_start[2] > vga8)
+                {   if (plane_v_start[3] > vga8)
+                        *++dst = scene_skybox_color(i);
+                    else
+                        *++dst = scene.landscape.color[3];
+                }
+                else
+                    *++dst = scene.landscape.color[2];
+            }
+            else
+                *++dst = scene.landscape.color[1];
+        }
+        else
+            *++dst = scene.landscape.color[0];
+    }
+}
+
+static inline uint16_t scene_skybox_color(int i)
+{   // TODO: more involved skybox:
+    return scene.landscape.to_draw.skybox.sky_color;
+}
+
+static inline void scene_calculate_skybox()
+{   scene.landscape.to_draw.skybox.sky_color = RGB(150, 190, 230);
 }
 
 float scene_calculate_landscape_z(float *position);
 
 static inline void scene_calculate_plane(int plane_index)
-{   float forward_distance = scene.landscape.plane_distance[plane_index];
+{   ASSERT(plane_index >= 0 && plane_index < NUM_SCENE_PLANES);
+    float forward_distance = scene.landscape.plane_distance[plane_index];
     ASSERT(forward_distance > 1.0f);
     float plane_center[2] =
     {   scene.camera.position[0] + scene.camera.forward[0] * forward_distance,
@@ -74,5 +128,5 @@ static inline void scene_calculate_plane(int plane_index)
 float scene_calculate_landscape_z(float *position)
 {   // position is a float[2] being passed in.
     float distance2 = position[0] * position[0] + position[1] * position[1];
-    return (position[0] - position[1] * sinf(position[0] * 0.1f)) * expf(-0.0001f * distance2);
+    return 50.f * (position[0] - position[1] * sinf(position[0] * 0.1f)) * expf(-0.0001f * distance2);
 }
