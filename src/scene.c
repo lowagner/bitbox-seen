@@ -6,6 +6,7 @@
 
 scene_t scene CCM_MEMORY;
 
+#define CAMERA_HEIGHT_OFF_GROUND 5.0f
 #define SCENE_ASPECT_RATIO 1.2f
 // minimum vga_line to start drawing on:
 #define MIN_V (2 * NUM_SCENE_PLANES /* calculating each plane */ + 2 /* blank lines at top*/)
@@ -45,6 +46,8 @@ scene_t scene CCM_MEMORY;
     (right)[1] = -((forward)[0]); \
 }
 
+void scene_calculate_landscape_z(float *position);
+
 void scene_restart()
 {   int plane = -1;
     scene.landscape.plane_distance[++plane] = 1.5f;
@@ -59,6 +62,8 @@ void scene_restart()
 
     // set up camera correctly:
     VECTOR_ASSIGN(scene.camera.position, 0, 0, 0);
+    scene_calculate_landscape_z(scene.camera.position);
+    scene.camera.position[2] += CAMERA_HEIGHT_OFF_GROUND;
     VECTOR_ASSIGN(scene.camera.forward, 0, 1, 0);
     VECTOR_ASSIGN(scene.camera.right, 1, 0, 0);
     scene.camera.screen_v = SCREEN_HEIGHT * 0.5f;
@@ -74,6 +79,15 @@ void scene_update()
     {   VECTOR2_ADD_WITH_MULTIPLIER
         (   scene.camera.position, scene.camera.forward, delta
         );
+        // TODO: why is camera.z negative going up mountains?? did i flip the scene??
+        scene_calculate_landscape_z(scene.camera.position);
+        scene.camera.position[2] += CAMERA_HEIGHT_OFF_GROUND;
+        if (vga_frame % 32 == 0)
+        {   message
+            (   "camera position(%f, %f, %f)\n",
+                VECTOR_EXPAND(scene.camera.position)
+            );
+        }
     }
     delta = 0.f;
     if (GAMEPAD_HOLDING(0, left))
@@ -149,8 +163,6 @@ static inline void scene_calculate_skybox()
 {   scene.landscape.to_draw.skybox.sky_color = RGB(150, 190, 230);
 }
 
-float scene_calculate_landscape_z(float *position);
-
 static inline void scene_calculate_plane(int plane_index)
 {   ASSERT(plane_index >= 0 && plane_index < NUM_SCENE_PLANES);
     float forward_distance = scene.landscape.plane_distance[plane_index];
@@ -164,14 +176,14 @@ static inline void scene_calculate_plane(int plane_index)
     float plane_pixel_width = half_plane_width / (SCREEN_WIDTH / 2);
     int i = -1;
     for (float camera_x = -half_plane_width; camera_x <= half_plane_width; camera_x += plane_pixel_width)
-    {   float position[2] =
+    {   float position[3] =
         {   plane_center[0] + scene.camera.right[0] * camera_x,
             plane_center[1] + scene.camera.right[1] * camera_x,
-            // again, ignore z
+            0,
         };
-        float landscape_z = scene_calculate_landscape_z(position);
+        scene_calculate_landscape_z(position);
         // do perspective:
-        float delta_z = (scene.camera.position[2] - landscape_z) / forward_distance;
+        float delta_z = (scene.camera.position[2] - position[2]) / forward_distance;
         // flip to screen coordinates and center based on camera's relative image location:
         float screen_v = scene.camera.screen_v - delta_z;
         uint8_t screen_v8;
@@ -187,8 +199,12 @@ static inline void scene_calculate_plane(int plane_index)
     }
 }
 
-float scene_calculate_landscape_z(float *position)
-{   // position is a float[2] being passed in.
+void scene_calculate_landscape_z(float *position)
+{   // position is a float[3] being passed in;
+    // the first two coordinates (x and y at position[0] and position[1])
+    // are used to calculate the z-value or height of the landscape (position[2])
     float distance2 = position[0] * position[0] + position[1] * position[1];
-    return 50.f * (position[0] - position[1] * sinf(position[0] * 0.1f)) * expf(-0.0001f * distance2);
+    position[2] = 50.f * expf(-0.0001f * distance2) *
+    (   position[0] - position[1] * sinf(position[0] * 0.1f)
+    );
 }
