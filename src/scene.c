@@ -10,10 +10,40 @@ scene_t scene CCM_MEMORY;
 // minimum vga_line to start drawing on:
 #define MIN_V (2 * NUM_SCENE_PLANES /* calculating each plane */ + 2 /* blank lines at top*/)
 
+#define VECTOR_EXPAND(vector) \
+    (vector)[0], (vector)[1], (vector)[2]
+
 #define VECTOR_ASSIGN(vector, x, y, z) \
-    vector[0] = (x); \
-    vector[1] = (y); \
-    vector[2] = (z)
+{   (vector)[0] = (x); \
+    (vector)[1] = (y); \
+    (vector)[2] = (z); \
+}
+
+#define SQUARE(x) ((x) * (x))
+
+#define VECTOR2_NORMALIZE(vector) \
+{   float norm = sqrtf(SQUARE((vector)[0]) + SQUARE((vector)[1])); \
+    ASSERT(norm > 1E-5); \
+    (vector)[0] /= norm; \
+    (vector)[1] /= norm; \
+}
+
+#define VECTOR2_ADD_WITH_MULTIPLIER(vector, add, multiplier) \
+{   (vector)[0] += (add)[0] * (multiplier); \
+    (vector)[1] += (add)[1] * (multiplier); \
+}
+
+#define VECTOR2S_SPIN_WITH_DELTA(forward, right, delta) \
+{   VECTOR2_ADD_WITH_MULTIPLIER(forward, right, delta); \
+    VECTOR2_NORMALIZE(forward); \
+    /* cross forward with z-axis to get new right 
+       x    y    z
+       f[0] f[1] 0   --> x (f[1]) - y (f[0])
+       0    0    1 
+    */ \
+    (right)[0] = (forward)[1]; \
+    (right)[1] = -((forward)[0]); \
+}
 
 void scene_restart()
 {   int plane = -1;
@@ -29,13 +59,39 @@ void scene_restart()
 
     // set up camera correctly:
     VECTOR_ASSIGN(scene.camera.position, 0, 0, 0);
-    VECTOR_ASSIGN(scene.camera.forward, 0, -1, 0);
+    VECTOR_ASSIGN(scene.camera.forward, 0, 1, 0);
     VECTOR_ASSIGN(scene.camera.right, 1, 0, 0);
     scene.camera.screen_v = SCREEN_HEIGHT * 0.5f;
 }
 
 void scene_update()
-{
+{   float delta = 0.f;
+    if (GAMEPAD_HOLDING(0, up))
+        delta += 0.1f;
+    if (GAMEPAD_HOLDING(0, down))
+        delta -= 0.1f;
+    if (delta)
+    {   VECTOR2_ADD_WITH_MULTIPLIER
+        (   scene.camera.position, scene.camera.forward, delta
+        );
+    }
+    delta = 0.f;
+    if (GAMEPAD_HOLDING(0, left))
+        delta -= 0.05f;
+    if (GAMEPAD_HOLDING(0, right))
+        delta += 0.05f;
+    if (delta)
+    {   VECTOR2S_SPIN_WITH_DELTA
+        (   scene.camera.forward, scene.camera.right, delta
+        );
+        if (vga_frame % 32 == 0)
+        {   message
+            (   "forward(%f, %f, %f), right(%f, %f, %f)\n",
+                VECTOR_EXPAND(scene.camera.forward),
+                VECTOR_EXPAND(scene.camera.right)
+            );
+        }
+    }
 }
 
 static inline uint16_t scene_skybox_color(int i);
@@ -52,6 +108,12 @@ void scene_line()
         }
         else if (vga_line % 2 == 0)
             scene_calculate_plane(vga_line/2 - 1);
+        return;
+    }
+    else if (vga_line >= SCREEN_HEIGHT - MIN_V)
+    {   if ((vga_line - (SCREEN_HEIGHT - MIN_V)) / 2 == 0)
+        {   memset(draw_buffer, 0, 2*SCREEN_WIDTH);
+        }
         return;
     }
     uint16_t *dst = draw_buffer - 1;
