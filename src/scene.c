@@ -21,6 +21,20 @@ scene_t scene CCM_MEMORY;
 }
 
 #define SQUARE(x) ((x) * (x))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+
+#define VECTOR_FOLLOW(update_me, with_this, delta) \
+{   (update_me)[0] += delta * ((with_this)[0] - (update_me)[0]); \
+    (update_me)[1] += delta * ((with_this)[1] - (update_me)[1]); \
+    (update_me)[2] += delta * ((with_this)[2] - (update_me)[2]); \
+}
+
+#define VECTOR_FOLLOW_WITH_OFFSET(update_me, with_this, offset0, offset1, offset2, delta) \
+{   (update_me)[0] += delta * ((with_this)[0] + offset0 - (update_me)[0]); \
+    (update_me)[1] += delta * ((with_this)[1] + offset1 - (update_me)[1]); \
+    (update_me)[2] += delta * ((with_this)[2] + offset2 - (update_me)[2]); \
+}
 
 #define VECTOR2_NORMALIZE(vector) \
 {   float norm = sqrtf(SQUARE((vector)[0]) + SQUARE((vector)[1])); \
@@ -46,7 +60,7 @@ scene_t scene CCM_MEMORY;
     (right)[1] = -((forward)[0]); \
 }
 
-void scene_calculate_landscape_z(float *position);
+float scene_calculate_landscape_z(float *position);
 
 void scene_restart()
 {   int plane = -1;
@@ -62,11 +76,17 @@ void scene_restart()
 
     // set up camera correctly:
     VECTOR_ASSIGN(scene.camera.position, 0, 0, 0);
-    scene_calculate_landscape_z(scene.camera.position);
-    scene.camera.position[2] += CAMERA_HEIGHT_OFF_GROUND;
+    scene.camera.position[2] =
+            scene_calculate_landscape_z(scene.camera.position) + CAMERA_HEIGHT_OFF_GROUND;
     VECTOR_ASSIGN(scene.camera.forward, 0, 1, 0);
     VECTOR_ASSIGN(scene.camera.right, 1, 0, 0);
-    scene.camera.screen_v = SCREEN_HEIGHT * 0.5f;
+    scene.camera.screen_v = SCREEN_HEIGHT / 2;
+
+    // set up player:
+    VECTOR_ASSIGN(scene.player.position, 0, 1, scene.camera.position[2]);
+    VECTOR_ASSIGN(scene.player.forward, 0, 1, 0);
+    VECTOR_ASSIGN(scene.player.right, 1, 0, 0);
+    VECTOR_ASSIGN(scene.player.velocity, 0, 0, 0);
 }
 
 void scene_update()
@@ -77,17 +97,9 @@ void scene_update()
         delta -= 0.1f;
     if (delta)
     {   VECTOR2_ADD_WITH_MULTIPLIER
-        (   scene.camera.position, scene.camera.forward, delta
+        (   scene.player.position, scene.player.forward, delta
         );
-        // TODO: why is camera.z negative going up mountains?? did i flip the scene??
-        scene_calculate_landscape_z(scene.camera.position);
-        scene.camera.position[2] += CAMERA_HEIGHT_OFF_GROUND;
-        if (vga_frame % 32 == 0)
-        {   message
-            (   "camera position(%f, %f, %f)\n",
-                VECTOR_EXPAND(scene.camera.position)
-            );
-        }
+        scene.player.position[2] = scene_calculate_landscape_z(scene.player.position);
     }
     delta = 0.f;
     if (GAMEPAD_HOLDING(0, left))
@@ -96,16 +108,28 @@ void scene_update()
         delta += 0.05f;
     if (delta)
     {   VECTOR2S_SPIN_WITH_DELTA
-        (   scene.camera.forward, scene.camera.right, delta
+        (   scene.player.forward, scene.player.right, delta
         );
-        if (vga_frame % 32 == 0)
-        {   message
-            (   "forward(%f, %f, %f), right(%f, %f, %f)\n",
-                VECTOR_EXPAND(scene.camera.forward),
-                VECTOR_EXPAND(scene.camera.right)
-            );
-        }
     }
+    VECTOR_FOLLOW(scene.camera.forward, scene.player.forward, 0.1f);
+    VECTOR_FOLLOW(scene.camera.right, scene.player.right, 0.1f);
+    VECTOR_FOLLOW_WITH_OFFSET
+    (   scene.camera.position, scene.player.position,
+        -scene.camera.forward[0],
+        -scene.camera.forward[1],
+        -scene.camera.forward[2] + CAMERA_HEIGHT_OFF_GROUND,
+        0.1f
+    );
+    if (vga_frame % 64 == 0)
+    {   // TODO: why is camera.z negative going up mountains?? did i flip the scene??
+        message
+        (   "camera position(%f, %f, %f):\n  forward(%f, %f, %f) and right(%f, %f, %f)\n",
+            VECTOR_EXPAND(scene.camera.position),
+            VECTOR_EXPAND(scene.camera.forward),
+            VECTOR_EXPAND(scene.camera.right)
+        );
+    }
+    // TODO: place the player in the camera's sights, adjust camera.screen_v as necessary
 }
 
 static inline uint16_t scene_skybox_color(int i);
@@ -152,6 +176,13 @@ void scene_line()
         else
             *++dst = scene.landscape.color[0];
     }
+    // Draw the player if they're on this line:
+    if (vga8 >= scene.player.v_top && vga8 < scene.player.v_bottom)
+    {   dst = draw_buffer + MAX(0, scene.player.u_left);
+        uint16_t *const max_dst = draw_buffer + MIN(scene.player.u_right, SCREEN_WIDTH);
+        while (dst < max_dst)
+            *dst++ = RGB(255, 0, 0);
+    }
 }
 
 static inline uint16_t scene_skybox_color(int i)
@@ -174,37 +205,36 @@ static inline void scene_calculate_plane(int plane_index)
     };
     float half_plane_width = forward_distance * SCENE_ASPECT_RATIO;
     float plane_pixel_width = half_plane_width / (SCREEN_WIDTH / 2);
-    int i = -1;
+    int screen_u = -1;
     for (float camera_x = -half_plane_width; camera_x <= half_plane_width; camera_x += plane_pixel_width)
     {   float position[3] =
         {   plane_center[0] + scene.camera.right[0] * camera_x,
             plane_center[1] + scene.camera.right[1] * camera_x,
             0,
         };
-        scene_calculate_landscape_z(position);
+        position[2] = scene_calculate_landscape_z(position);
         // do perspective:
         float delta_z = (scene.camera.position[2] - position[2]) / forward_distance;
         // flip to screen coordinates and center based on camera's relative image location:
-        float screen_v = scene.camera.screen_v - delta_z;
-        uint8_t screen_v8;
-        if (screen_v < MIN_V)
-            screen_v8 = 0;
-        else if (screen_v >= SCREEN_HEIGHT - MIN_V)
+        float landscape_v = scene.camera.screen_v - delta_z;
+        uint8_t landscape_v8;
+        if (landscape_v < MIN_V)
+            landscape_v8 = 0;
+        else if (landscape_v >= SCREEN_HEIGHT - MIN_V)
         {   STATIC_ASSERT(SCREEN_HEIGHT <= 255);
-            screen_v8 = SCREEN_HEIGHT;
+            landscape_v8 = SCREEN_HEIGHT;
         }
         else
-            screen_v8 = roundf(screen_v);
-        scene.landscape.to_draw.plane_v_start[++i][plane_index] = screen_v8;        
+            landscape_v8 = roundf(landscape_v);
+        scene.landscape.to_draw.plane_v_start[++screen_u][plane_index] = landscape_v8;
     }
 }
 
-void scene_calculate_landscape_z(float *position)
-{   // position is a float[3] being passed in;
-    // the first two coordinates (x and y at position[0] and position[1])
-    // are used to calculate the z-value or height of the landscape (position[2])
+float scene_calculate_landscape_z(float *position)
+{   // the first two coordinates (x and y at position[0] and position[1])
+    // are used to calculate the z-value or height of the landscape (return value)
     float distance2 = position[0] * position[0] + position[1] * position[1];
-    position[2] = 50.f * expf(-0.0001f * distance2) *
+    return 50.f * expf(-0.0001f * distance2) *
     (   position[0] - position[1] * sinf(position[0] * 0.1f)
     );
 }

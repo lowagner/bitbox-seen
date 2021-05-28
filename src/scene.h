@@ -83,13 +83,24 @@ typedef struct scene
 
     struct
     {   float position[3];
+        float forward[3];
+        float right[3];
+        float velocity[3];
+        uint8_t v_top;
+        uint8_t v_bottom;
+        int16_t u_left;
+        int16_t u_right;
+    }   player;
+
+    struct
+    {   float position[3];
         // unit vector corresponding to direction the camera is looking.
         // the z-component, forward[2], should be zero.
         float forward[3];
         // this right unit-vector for the camera:
         float right[3];
         // where the camera is in screen-height coordinates (0 to SCREEN_HEIGHT-1 probably):
-        float screen_v;
+        uint8_t screen_v;
     }   camera;
 
     landscape_t landscape;
